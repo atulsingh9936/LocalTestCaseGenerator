@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B.L.A.S.T. | Testcase Generator</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1>Testcase Pilot</h1>
+            <div id="status" style="font-size: 0.8rem; color: var(--text-dim);">LLM: llama3.2-1b</div>
+        </header>
+
+        <div id="chat-container" class="chat-container">
+            <div class="message bot-message">
+                Hello! I am your AI QA Pilot. Describe the feature or requirement you want to test, and I will generate
+                structured test cases for you.
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="Type a feature (e.g., 'User Login flow')..."
+                autocomplete="off">
+            <button id="send-btn">Generate</button>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        function appendMessage(text, role, isJson = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}-message`;
+
+            if (isJson) {
+                try {
+                    const data = JSON.parse(text);
+                    if (data.test_cases) {
+                        data.test_cases.forEach(tc => {
+                            const card = document.createElement('div');
+                            card.className = 'test-case-card';
+                            card.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong style="font-size: 1.1rem;">${tc.title}</strong>
+                                    <span class="priority-${tc.priority.toLowerCase()}">${tc.priority.toUpperCase()}</span>
+                                </div>
+                                <ul class="steps-list">
+                                    ${tc.steps.map(step => {
+                                let stepText = step;
+                                if (typeof step === 'object' && step !== null) {
+                                    // Try to find a common key or stringify
+                                    stepText = step.step || step.action || step.description || JSON.stringify(step);
+                                }
+                                return `<li>${stepText}</li>`;
+                            }).join('')}
+                                </ul>
+                                <div style="font-size: 0.85rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                                    <span style="color: var(--accent-primary)">Expect:</span> ${tc.expected_result}
+                                </div>
+                            `;
+                            msgDiv.appendChild(card);
+                        });
+                    }
+                } catch (e) {
+                    msgDiv.textContent = text;
+                }
+            } else {
+                msgDiv.textContent = text;
+            }
+
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return msgDiv;
+        }
+
+        async function generate() {
+            const input = userInput.value.trim();
+            if (!input) return;
+
+            // Clear input and append user message
+            userInput.value = '';
+            appendMessage(input, 'user');
+
+            // Append loading indicator
+            const loading = document.createElement('div');
+            loading.className = 'message bot-message loading';
+            loading.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+            chatContainer.appendChild(loading);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: input })
+                });
+
+                const data = await response.json();
+                chatContainer.removeChild(loading);
+
+                if (data.test_cases) {
+                    appendMessage(JSON.stringify(data), 'bot', true);
+                } else {
+                    appendMessage("Sorry, I encountered an error: " + (data.error || "Unknown error"), "bot");
+                }
+            } catch (err) {
+                chatContainer.removeChild(loading);
+                appendMessage("Network error. Is the server running?", "bot");
+            }
+        }
+
+        sendBtn.addEventListener('click', generate);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') generate();
+        });
+    </script>
+</body>
+
+</html>
